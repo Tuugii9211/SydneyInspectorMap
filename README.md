@@ -1,7 +1,7 @@
-<<<<<<< HEAD
+
 # SydneyInspectorMap
 A PTV alert remake following OpenSpec, a spec driven framework using React Native to deploy for both IOS and Android app
-=======
+=======**
 This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
 
 # Getting Started
