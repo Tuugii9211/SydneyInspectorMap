@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import Map from './components/Map';
 import ReportButton from './components/ReportButton';
-import { isFirebaseReady, Report, subscribeToReports, submitReport } from './services/reports';
+import { ConnectionStatus, Report, REPORT_TTL_MS, subscribeToReports, submitReport } from './services/reports';
+import { useTheme } from './theme';
 
 function getPosition(): Promise<GeolocationPosition> {
   return new Promise((resolve, reject) => {
@@ -19,16 +20,26 @@ function getPosition(): Promise<GeolocationPosition> {
 
 export default function App() {
   const [reports, setReports] = useState<Report[]>([]);
+  const [status, setStatus] = useState<ConnectionStatus>('connecting');
   const [toast, setToast] = useState<string | null>(null);
-  const firebaseReady = isFirebaseReady();
+  const [now, setNow] = useState(() => Date.now());
+  const { theme, toggle } = useTheme();
 
-  useEffect(() => subscribeToReports(setReports), []);
+  useEffect(() => subscribeToReports(setReports, setStatus), []);
+
+  // Re-render every 30s so pins age out and "x min ago" stays current.
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
 
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 4000);
     return () => clearTimeout(t);
   }, [toast]);
+
+  const live = reports.filter(r => !r.createdAt || now - r.createdAt.getTime() < REPORT_TTL_MS);
 
   const handleReport = async () => {
     let position: GeolocationPosition;
@@ -41,7 +52,7 @@ export default function App() {
     }
     try {
       await submitReport(position.coords.latitude, position.coords.longitude);
-      setToast('Inspector report submitted. Thanks!');
+      setToast('🦄 Inspector reported. Thanks!');
     } catch (err) {
       console.error(err);
       setToast('Could not submit the report.');
@@ -49,16 +60,31 @@ export default function App() {
     }
   };
 
+  const statusText =
+    status === 'connecting'
+      ? 'Connecting…'
+      : status === 'offline'
+        ? 'Offline mode'
+        : `${live.length} active report${live.length === 1 ? '' : 's'}`;
+
   return (
     <div className="app">
       <header className="app-header">
-        <h1>Sydney Inspector Map</h1>
-        <span className="count">
-          {firebaseReady ? `${reports.length} active report${reports.length === 1 ? '' : 's'}` : 'Offline mode'}
-        </span>
+        <h1>🦄 Sydney Inspector Map</h1>
+        <div className="header-right">
+          <span className={`count ${status}`}>{statusText}</span>
+          <button
+            className="theme-toggle"
+            onClick={toggle}
+            aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+          >
+            {theme === 'dark' ? '☀️' : '🌙'}
+          </button>
+        </div>
       </header>
-      <Map reports={reports} />
-      <ReportButton onReport={handleReport} disabled={!firebaseReady} />
+      <Map reports={live} theme={theme} now={now} />
+      <ReportButton onReport={handleReport} disabled={status !== 'online'} />
       {toast && <div className="toast">{toast}</div>}
     </div>
   );

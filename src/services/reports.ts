@@ -15,9 +15,11 @@ import {
   Timestamp,
   where,
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { getDb } from '../firebase';
 
 export const REPORT_TTL_MS = 60 * 60 * 1000;
+
+export type ConnectionStatus = 'connecting' | 'online' | 'offline';
 
 export interface Report {
   id: string;
@@ -26,9 +28,8 @@ export interface Report {
   createdAt: Date | null;
 }
 
-export const isFirebaseReady = () => db !== null;
-
 export async function submitReport(lat: number, lng: number) {
+  const db = await getDb();
   if (!db) throw new Error('Firebase is not configured');
   await addDoc(collection(db, 'reports'), {
     location: new GeoPoint(lat, lng),
@@ -37,30 +38,52 @@ export async function submitReport(lat: number, lng: number) {
   });
 }
 
-export function subscribeToReports(callback: (reports: Report[]) => void) {
-  if (!db) return () => {};
+export function subscribeToReports(
+  onReports: (reports: Report[]) => void,
+  onStatus: (status: ConnectionStatus) => void,
+) {
+  let unsubscribe = () => {};
+  let cancelled = false;
 
-  const q = query(
-    collection(db, 'reports'),
-    where('timestamp', '>', Timestamp.fromMillis(Date.now() - REPORT_TTL_MS)),
-  );
+  getDb().then(db => {
+    if (cancelled) return;
+    if (!db) {
+      onStatus('offline');
+      return;
+    }
+    const q = query(
+      collection(db, 'reports'),
+      where('timestamp', '>', Timestamp.fromMillis(Date.now() - REPORT_TTL_MS)),
+    );
+    unsubscribe = onSnapshot(
+      q,
+      snapshot => {
+        onStatus('online');
+        onReports(
+          snapshot.docs.flatMap(doc => {
+            const data = doc.data({ serverTimestamps: 'estimate' });
+            const loc = data.location as GeoPoint | undefined;
+            if (!loc) return [];
+            return [
+              {
+                id: doc.id,
+                lat: loc.latitude,
+                lng: loc.longitude,
+                createdAt: (data.timestamp as Timestamp | null)?.toDate() ?? null,
+              },
+            ];
+          }),
+        );
+      },
+      error => {
+        console.error('Error subscribing to reports:', error);
+        onStatus('offline');
+      },
+    );
+  });
 
-  return onSnapshot(
-    q,
-    snapshot => {
-      callback(
-        snapshot.docs.map(doc => {
-          const data = doc.data();
-          const loc = data.location as GeoPoint;
-          return {
-            id: doc.id,
-            lat: loc.latitude,
-            lng: loc.longitude,
-            createdAt: (data.timestamp as Timestamp | null)?.toDate() ?? null,
-          };
-        }),
-      );
-    },
-    error => console.error('Error subscribing to reports:', error),
-  );
+  return () => {
+    cancelled = true;
+    unsubscribe();
+  };
 }
