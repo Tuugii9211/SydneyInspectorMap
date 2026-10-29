@@ -1,49 +1,66 @@
 /**
- * Firestore Collection Schema: 'reports'
- * 
- * Each document:
- * {
- *   location: GeoPoint, // { latitude, longitude }
- *   timestamp: Timestamp, // server timestamp
- *   type: string, // e.g., 'inspector'
- *   status: string, // 'active' | 'expired'
- * }
+ * Firestore collection 'reports'. Each document:
+ *   location:  GeoPoint
+ *   timestamp: server Timestamp
+ *   type:      'inspector'
+ * Reports older than 60 minutes are hidden here and deleted by functions/index.js.
  */
+import {
+  addDoc,
+  collection,
+  GeoPoint,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  Timestamp,
+  where,
+} from 'firebase/firestore';
+import { db } from '../firebase';
 
-import firestore from '@react-native-firebase/firestore';
+export const REPORT_TTL_MS = 60 * 60 * 1000;
 
 export interface Report {
-  id?: string;
-  location: {
-    latitude: number;
-    longitude: number;
-  };
-  timestamp: any;
-  type: 'inspector';
+  id: string;
+  lat: number;
+  lng: number;
+  createdAt: Date | null;
 }
 
-export const submitReport = async (latitude: number, longitude: number) => {
-  try {
-    await firestore().collection('reports').add({
-      location: new firestore.GeoPoint(latitude, longitude),
-      timestamp: firestore.FieldValue.serverTimestamp(),
-      type: 'inspector',
-    });
-  } catch (error) {
-    console.error('Error submitting report:', error);
-    throw error;
-  }
-};
+export const isFirebaseReady = () => db !== null;
 
-export const subscribeToReports = (callback: (reports: Report[]) => void) => {
-  return firestore()
-    .collection('reports')
-    .where('timestamp', '>', new Date(Date.now() - 60 * 60 * 1000)) // Last 60 minutes
-    .onSnapshot(snapshot => {
-      const reports = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as Report[];
-      callback(reports);
-    });
-};
+export async function submitReport(lat: number, lng: number) {
+  if (!db) throw new Error('Firebase is not configured');
+  await addDoc(collection(db, 'reports'), {
+    location: new GeoPoint(lat, lng),
+    timestamp: serverTimestamp(),
+    type: 'inspector',
+  });
+}
+
+export function subscribeToReports(callback: (reports: Report[]) => void) {
+  if (!db) return () => {};
+
+  const q = query(
+    collection(db, 'reports'),
+    where('timestamp', '>', Timestamp.fromMillis(Date.now() - REPORT_TTL_MS)),
+  );
+
+  return onSnapshot(
+    q,
+    snapshot => {
+      callback(
+        snapshot.docs.map(doc => {
+          const data = doc.data();
+          const loc = data.location as GeoPoint;
+          return {
+            id: doc.id,
+            lat: loc.latitude,
+            lng: loc.longitude,
+            createdAt: (data.timestamp as Timestamp | null)?.toDate() ?? null,
+          };
+        }),
+      );
+    },
+    error => console.error('Error subscribing to reports:', error),
+  );
+}

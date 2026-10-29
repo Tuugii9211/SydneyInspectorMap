@@ -1,137 +1,52 @@
-import React, { useState } from 'react';
-import {
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-  Modal,
-  Alert,
-} from 'react-native';
+import { useState } from 'react';
 
-interface ReportButtonProps {
-  onReport: () => void;
+interface Props {
+  disabled?: boolean;
+  onReport: () => Promise<void>;
 }
 
-const ReportButton: React.FC<ReportButtonProps> = ({ onReport }) => {
-  const [modalVisible, setModalVisible] = useState(false);
+export default function ReportButton({ disabled, onReport }: Props) {
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  const handlePress = () => {
-    setModalVisible(true);
-  };
-
-  const submitReport = () => {
-    onReport();
-    setModalVisible(false);
-    Alert.alert('Success', 'Inspector report submitted!');
+  const submit = async () => {
+    setSubmitting(true);
+    try {
+      await onReport();
+      setOpen(false);
+    } catch {
+      // The caller shows the error message.
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
-    <View style={styles.container}>
-      <TouchableOpacity style={styles.button} onPress={handlePress}>
-        <Text style={styles.buttonText}>Add Report</Text>
-      </TouchableOpacity>
-
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
+    <>
+      <button
+        className="report-button"
+        onClick={() => setOpen(true)}
+        disabled={disabled}
+        title={disabled ? 'Firebase is not configured' : undefined}
       >
-        <View style={styles.centeredView}>
-          <View style={styles.modalView}>
-            <Text style={styles.modalText}>Report a Transport Inspector here?</Text>
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.buttonCancel]}
-                onPress={() => setModalVisible(false)}
-              >
-                <Text style={styles.textStyle}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.buttonSubmit]}
-                onPress={submitReport}
-              >
-                <Text style={styles.textStyle}>Submit</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    </View>
+        Report inspector
+      </button>
+
+      {open && (
+        <div className="modal-backdrop" onClick={() => !submitting && setOpen(false)}>
+          <div className="modal" role="dialog" aria-modal="true" onClick={e => e.stopPropagation()}>
+            <p>Report a transport inspector at your current location?</p>
+            <div className="modal-actions">
+              <button className="btn-secondary" onClick={() => setOpen(false)} disabled={submitting}>
+                Cancel
+              </button>
+              <button className="btn-primary" onClick={submit} disabled={submitting}>
+                {submitting ? 'Submitting…' : 'Submit'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
-};
-
-const styles = StyleSheet.create({
-  container: {
-    position: 'absolute',
-    bottom: 40,
-    alignSelf: 'center',
-  },
-  button: {
-    backgroundColor: '#FF4444',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 25,
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-  },
-  buttonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  centeredView: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 22,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  modalView: {
-    margin: 20,
-    backgroundColor: 'white',
-    borderRadius: 20,
-    padding: 35,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  modalText: {
-    marginBottom: 15,
-    textAlign: 'center',
-    fontSize: 18,
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  modalButton: {
-    borderRadius: 10,
-    padding: 10,
-    elevation: 2,
-    minWidth: 100,
-    alignItems: 'center',
-  },
-  buttonCancel: {
-    backgroundColor: '#999',
-  },
-  buttonSubmit: {
-    backgroundColor: '#FF4444',
-  },
-  textStyle: {
-    color: 'white',
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-});
-
-export default ReportButton;
+}

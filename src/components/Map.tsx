@@ -1,74 +1,49 @@
-import React, { useEffect, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
-import MapView from 'react-native-map-clustering';
-import { PROVIDER_GOOGLE, Polyline, Marker } from 'react-native-maps';
+import { CircleMarker, MapContainer, Polyline, Popup, TileLayer } from 'react-leaflet';
+import type { Feature, FeatureCollection, LineString } from 'geojson';
 import transportLines from '../data/transportLines.json';
-import { subscribeToReports, Report } from '../services/reports';
+import type { Report } from '../services/reports';
 
-const SYDNEY_CBD = {
-  latitude: -33.8688,
-  longitude: 151.2093,
-  latitudeDelta: 0.05,
-  longitudeDelta: 0.05,
-};
+const SYDNEY_CBD: [number, number] = [-33.8688, 151.2093];
 
-const Map = () => {
-  const [reports, setReports] = useState<Report[]>([]);
+type LineFeature = Feature<LineString, { name: string; color: string }>;
+const lines = (transportLines as FeatureCollection).features as LineFeature[];
 
-  useEffect(() => {
-    // Note: This will fail until Firebase is configured
-    try {
-      const unsubscribe = subscribeToReports((newReports) => {
-        setReports(newReports);
-      });
-      return () => unsubscribe();
-    } catch (e) {
-      console.log('Firebase not initialized yet');
-    }
-  }, []);
+function minutesAgo(date: Date | null) {
+  if (!date) return 'just now';
+  const mins = Math.round((Date.now() - date.getTime()) / 60000);
+  return mins < 1 ? 'just now' : `${mins} min ago`;
+}
 
+export default function Map({ reports }: { reports: Report[] }) {
   return (
-    <View style={styles.container}>
-      <MapView
-        provider={PROVIDER_GOOGLE}
-        style={styles.map}
-        initialRegion={SYDNEY_CBD}
-      >
-        {transportLines.features.map((feature, index) => (
-          <Polyline
-            key={index}
-            coordinates={feature.geometry.coordinates.map(coord => ({
-              longitude: coord[0],
-              latitude: coord[1],
-            }))}
-            strokeColor={feature.properties.color}
-            strokeWidth={3}
-          />
-        ))}
+    <MapContainer center={SYDNEY_CBD} zoom={14} className="map" zoomControl={false}>
+      <TileLayer
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+      />
 
-        {reports.map((report) => (
-          <Marker
-            key={report.id}
-            coordinate={report.location}
-            title="Transport Inspector"
-            description="Reported by community"
-            pinColor="red"
-          />
-        ))}
-      </MapView>
-    </View>
+      {lines.map(line => (
+        <Polyline
+          key={line.properties.name}
+          positions={line.geometry.coordinates.map(([lng, lat]) => [lat, lng] as [number, number])}
+          pathOptions={{ color: line.properties.color, weight: 4 }}
+        />
+      ))}
+
+      {reports.map(report => (
+        <CircleMarker
+          key={report.id}
+          center={[report.lat, report.lng]}
+          radius={10}
+          pathOptions={{ color: '#fff', weight: 2, fillColor: '#ff4444', fillOpacity: 0.9 }}
+        >
+          <Popup>
+            <strong>Transport inspector</strong>
+            <br />
+            Reported {minutesAgo(report.createdAt)}
+          </Popup>
+        </CircleMarker>
+      ))}
+    </MapContainer>
   );
-};
-
-const styles = StyleSheet.create({
-  container: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-  },
-  map: {
-    ...StyleSheet.absoluteFillObject,
-  },
-});
-
-export default Map;
+}
